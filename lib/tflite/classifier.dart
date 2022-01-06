@@ -17,11 +17,11 @@ class Classifier {
   /// Labels file loaded as list
   List<String> _labels;
 
-  static const String MODEL_FILE_NAME = "detect.tflite";
-  static const String LABEL_FILE_NAME = "labelmap.txt";
+  static const String MODEL_FILE_NAME = "yolov5m-fp16-320.tflite";
+  static const String LABEL_FILE_NAME = "yolo.txt";
 
   /// Input size of image (height = width = 300)
-  static const int INPUT_SIZE = 300;
+  static const int INPUT_SIZE = 320;
 
   /// Result score threshold
   static const double THRESHOLD = 0.5;
@@ -80,6 +80,9 @@ class Classifier {
     }
   }
 
+  // TensorProcessor probabilityProcessor =
+  // TensorProcessorBuilder().add(DequantizeOp(0, 1 / 255.0)).build();
+
   /// Pre-process the image
   TensorImage getProcessedImage(TensorImage inputImage) {
     padSize = max(inputImage.height, inputImage.width);
@@ -87,13 +90,76 @@ class Classifier {
       imageProcessor = ImageProcessorBuilder()
           .add(ResizeWithCropOrPadOp(padSize, padSize))
           .add(ResizeOp(INPUT_SIZE, INPUT_SIZE, ResizeMethod.BILINEAR))
+          .add(DequantizeOp(0, 255.0))
           .build();
     }
     inputImage = imageProcessor.process(inputImage);
+    // print("hihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh");
+    // print(inputImage.getTensorBuffer ().getDoubleList());
     return inputImage;
   }
 
   /// Runs object detection on the input image
+  List<double> getArray(imageLib.Image image) {
+    var predictStartTime = DateTime.now().millisecondsSinceEpoch;
+
+    if (_interpreter == null) {
+      print("Interpreter not initialized");
+      return null;
+    }
+
+    var preProcessStart = DateTime.now().millisecondsSinceEpoch;
+
+    // Create TensorImage from image
+    // TensorImage inputImage = TensorImage.fromImage(image);
+    TensorImage inputImage =  TensorImage(TfLiteType.float32);
+    inputImage.loadImage(image);
+
+    // Pre-process TensorImage
+    inputImage = getProcessedImage(inputImage);
+    // print("11111111111111");
+    var preProcessElapsedTime =
+        DateTime.now().millisecondsSinceEpoch - preProcessStart;
+    // print("2222222222222");
+    // TensorBuffers for output tensors
+    // print(_outputShapes);
+    // print(TensorBufferFloat[0]);
+    TensorBuffer outputLocations = TensorBufferFloat(_outputShapes[0]);
+    TensorBuffer outputClasses = TensorBufferFloat(_outputShapes[0]);
+    TensorBuffer outputScores = TensorBufferFloat(_outputShapes[0]);
+    TensorBuffer numLocations = TensorBufferFloat(_outputShapes[0]);
+    // print("..............................");
+    // print(outputLocations);
+    // print("..............................");
+    // Inputs object for runForMultipleInputs
+    // Use [TensorImage.buffer] or [TensorBuffer.buffer] to pass by reference
+    List<Object> inputs = [inputImage.buffer];
+
+    // Outputs map
+    Map<int, Object> outputs = {
+      0: outputLocations.buffer,
+    };
+    // print("333333333333333333");
+    var inferenceTimeStart = DateTime.now().millisecondsSinceEpoch;
+
+    // run inference
+    _interpreter.runForMultipleInputs(inputs, outputs);
+    // print(outputLocations.getDoubleList().sublist(0, 85));
+    // print(outputLocations.shape);
+    // print("44444444444444444444444");
+
+    var inferenceTimeElapsed =
+        DateTime.now().millisecondsSinceEpoch - inferenceTimeStart;
+    print("55555555555555555555");
+    // Maximum number of results to show
+
+
+    var predictElapsedTime =
+        DateTime.now().millisecondsSinceEpoch - predictStartTime;
+
+    return outputLocations.getDoubleList();
+  }
+
   Map<String, dynamic> predict(imageLib.Image image) {
     var predictStartTime = DateTime.now().millisecondsSinceEpoch;
 
