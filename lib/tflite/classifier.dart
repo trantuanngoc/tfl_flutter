@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as imageLib;
 import 'package:object_detection/tflite/recognition.dart';
@@ -17,8 +18,8 @@ class Classifier {
   /// Labels file loaded as list
   List<String> _labels;
 
-  static const String MODEL_FILE_NAME = "yolov5m-fp16-320.tflite";
-  static const String LABEL_FILE_NAME = "yolo.txt";
+  static const String MODEL_FILE_NAME = "best2.tflite";
+  static const String LABEL_FILE_NAME = "best.txt";
 
   /// Input size of image (height = width = 300)
   static const int INPUT_SIZE = 320;
@@ -80,8 +81,6 @@ class Classifier {
     }
   }
 
-  // TensorProcessor probabilityProcessor =
-  // TensorProcessorBuilder().add(DequantizeOp(0, 1 / 255.0)).build();
 
   /// Pre-process the image
   TensorImage getProcessedImage(TensorImage inputImage) {
@@ -94,71 +93,9 @@ class Classifier {
           .build();
     }
     inputImage = imageProcessor.process(inputImage);
-    // print("hihhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh");
-    // print(inputImage.getTensorBuffer ().getDoubleList());
     return inputImage;
   }
 
-  /// Runs object detection on the input image
-  List<double> getArray(imageLib.Image image) {
-    var predictStartTime = DateTime.now().millisecondsSinceEpoch;
-
-    if (_interpreter == null) {
-      print("Interpreter not initialized");
-      return null;
-    }
-
-    var preProcessStart = DateTime.now().millisecondsSinceEpoch;
-
-    // Create TensorImage from image
-    // TensorImage inputImage = TensorImage.fromImage(image);
-    TensorImage inputImage =  TensorImage(TfLiteType.float32);
-    inputImage.loadImage(image);
-
-    // Pre-process TensorImage
-    inputImage = getProcessedImage(inputImage);
-    // print("11111111111111");
-    var preProcessElapsedTime =
-        DateTime.now().millisecondsSinceEpoch - preProcessStart;
-    // print("2222222222222");
-    // TensorBuffers for output tensors
-    // print(_outputShapes);
-    // print(TensorBufferFloat[0]);
-    TensorBuffer outputLocations = TensorBufferFloat(_outputShapes[0]);
-    TensorBuffer outputClasses = TensorBufferFloat(_outputShapes[0]);
-    TensorBuffer outputScores = TensorBufferFloat(_outputShapes[0]);
-    TensorBuffer numLocations = TensorBufferFloat(_outputShapes[0]);
-    // print("..............................");
-    // print(outputLocations);
-    // print("..............................");
-    // Inputs object for runForMultipleInputs
-    // Use [TensorImage.buffer] or [TensorBuffer.buffer] to pass by reference
-    List<Object> inputs = [inputImage.buffer];
-
-    // Outputs map
-    Map<int, Object> outputs = {
-      0: outputLocations.buffer,
-    };
-    // print("333333333333333333");
-    var inferenceTimeStart = DateTime.now().millisecondsSinceEpoch;
-
-    // run inference
-    _interpreter.runForMultipleInputs(inputs, outputs);
-    // print(outputLocations.getDoubleList().sublist(0, 85));
-    // print(outputLocations.shape);
-    // print("44444444444444444444444");
-
-    var inferenceTimeElapsed =
-        DateTime.now().millisecondsSinceEpoch - inferenceTimeStart;
-    print("55555555555555555555");
-    // Maximum number of results to show
-
-
-    var predictElapsedTime =
-        DateTime.now().millisecondsSinceEpoch - predictStartTime;
-
-    return outputLocations.getDoubleList();
-  }
 
   Map<String, dynamic> predict(imageLib.Image image) {
     var predictStartTime = DateTime.now().millisecondsSinceEpoch;
@@ -170,53 +107,54 @@ class Classifier {
 
     var preProcessStart = DateTime.now().millisecondsSinceEpoch;
 
-    // Create TensorImage from image
-    TensorImage inputImage = TensorImage.fromImage(image);
+    TensorImage inputImage =  TensorImage(TfLiteType.float32);
+    inputImage.loadImage(image);
 
-    // Pre-process TensorImage
+
     inputImage = getProcessedImage(inputImage);
 
     var preProcessElapsedTime =
         DateTime.now().millisecondsSinceEpoch - preProcessStart;
 
-    // TensorBuffers for output tensors
-    TensorBuffer outputLocations = TensorBufferFloat(_outputShapes[0]);
-    TensorBuffer outputClasses = TensorBufferFloat(_outputShapes[1]);
-    TensorBuffer outputScores = TensorBufferFloat(_outputShapes[2]);
-    TensorBuffer numLocations = TensorBufferFloat(_outputShapes[3]);
-
-    // Inputs object for runForMultipleInputs
-    // Use [TensorImage.buffer] or [TensorBuffer.buffer] to pass by reference
+    TensorBuffer outputLocations = TensorBufferFloat([6300, 4]);
+    TensorBuffer output = TensorBufferFloat(_outputShapes[0]);
+    TensorBuffer outputScores = TensorBufferFloat([6300, 1]);
+    TensorBuffer outputObjScores = TensorBufferFloat([6300, 1]);
     List<Object> inputs = [inputImage.buffer];
 
     // Outputs map
     Map<int, Object> outputs = {
-      0: outputLocations.buffer,
-      1: outputClasses.buffer,
-      2: outputScores.buffer,
-      3: numLocations.buffer,
+      0: output.buffer,
     };
 
     var inferenceTimeStart = DateTime.now().millisecondsSinceEpoch;
 
-    // run inference
     _interpreter.runForMultipleInputs(inputs, outputs);
+
+    var flatList = output.getDoubleList();
+    List<double> outputLocationsList = [];
+    List<int> outputScoresList = [];
+    List<double> outputObjScoresList = [];
+
+    for (int i = 0; i < 6300; i++) {
+      var subList = flatList.sublist(i*6, (i+1)*6);
+      outputLocationsList.addAll(subList.sublist(0, 4));
+      outputScoresList.addAll([subList.sublist(5).indexOf(subList.sublist(5).reduce(max))]);
+      outputObjScoresList.addAll(subList.sublist(4, 5));
+    }
+    outputLocations.loadList(outputLocationsList, shape: [6300, 4]);
+    outputScores.loadList(outputScoresList, shape: [6300, 1]);
+    outputObjScores.loadList(outputObjScoresList, shape: [6300, 1]);
 
     var inferenceTimeElapsed =
         DateTime.now().millisecondsSinceEpoch - inferenceTimeStart;
 
-    // Maximum number of results to show
-    int resultsCount = min(NUM_RESULTS, numLocations.getIntValue(0));
-
-    // Using labelOffset = 1 as ??? at index 0
-    int labelOffset = 1;
-
     // Using bounding box utils for easy conversion of tensorbuffer to List<Rect>
     List<Rect> locations = BoundingBoxUtils.convert(
       tensor: outputLocations,
-      valueIndex: [1, 0, 3, 2],
-      boundingBoxAxis: 2,
-      boundingBoxType: BoundingBoxType.BOUNDARIES,
+      valueIndex: [0, 1, 2, 3],
+      boundingBoxAxis: 1,
+      boundingBoxType: BoundingBoxType.CENTER,
       coordinateType: CoordinateType.RATIO,
       height: INPUT_SIZE,
       width: INPUT_SIZE,
@@ -224,15 +162,18 @@ class Classifier {
 
     List<Recognition> recognitions = [];
 
-    for (int i = 0; i < resultsCount; i++) {
-      // Prediction score
-      var score = outputScores.getDoubleValue(i);
+    for (int i = 0; i < 6300; i++) {
+      var score = outputObjScores.getDoubleValue(i);
+      var confi = outputScores.getDoubleValue(i);
+      // print(confi);
+      // print(" ---------------------");
+      // print(outputLocations.getDoubleList().sublist(i*4, 4*(i+1)));
+      // var labelIndex = outputScores.getDoubleList().sublist(i*80, 80*(i+1)).indexOf(confi);
+      var label = _labels.elementAt(confi.toInt());
 
-      // Label string
-      var labelIndex = outputClasses.getIntValue(i) + labelOffset;
-      var label = _labels.elementAt(labelIndex);
-
-      if (score > THRESHOLD) {
+      if (score > 0.5) {
+        print(score);
+        print(confi);
         // inverse of rect
         // [locations] corresponds to the image size 300 X 300
         // inverseTransformRect transforms it our [inputImage]
@@ -240,7 +181,7 @@ class Classifier {
             locations[i], image.height, image.width);
 
         recognitions.add(
-          Recognition(i, label, score, transformedRect),
+          Recognition(i, label, confi, transformedRect),
         );
       }
     }
